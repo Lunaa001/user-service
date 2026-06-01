@@ -1,8 +1,5 @@
 services: 
     user-service:
-        build:
-            context: .
-            dockerfile: Dockerfile
         image: notebookum-user:latest
         restart: unless-stopped
         # LOAD BALANCER PATTERN
@@ -11,21 +8,30 @@ services:
         networks:
             - notebookum-network
         labels:
+            # Traefik habilitación
             - "traefik.enable=true"
-            - "traefik.http.routers.user.rule=Host(`user.internal`)"
-            - "traefik.http.services.user.loadbalancer.server.port=5004"
-            # CIRCUIT BREAKER PATTERN
-            - "traefik.http.middlewares.cb-user.circuitbreaker.expression=NetworkErrorRatio() > 0.5"
-            # BULKHEAD PATTERN
-            - "traefik.http.middlewares.bulkhead-user.inflightreq.amount=30"
-            - "traefik.http.routers.user.middlewares=cb-user,bulkhead-user"
-        volumes:
-            - ./app:/app/app:ro
-            - ./main.py:/app/main.py:ro
+            
+            # Router configuration
+            - "traefik.http.routers.user-service.rule=Host(`user.universidad.localhost`)"
+            - "traefik.http.routers.user-service.service=user-service"
+            
+            # Service configuration
+            - "traefik.http.services.user-service.loadbalancer.server.port=5000"
+            
+            # CIRCUIT BREAKER PATTERN - Detección de errores de red
+            - "traefik.http.middlewares.user-service-cb.circuitbreaker.expression=NetworkErrorRatio() > 0.5"
+            
+            # LATENCY PATTERN - Control de latencia máxima
+            - "traefik.http.middlewares.user-service-latency.timeout.request=10s"
+            
+            # BULKHEAD PATTERN - Control de concurrencia
+            - "traefik.http.middlewares.user-service-bulkhead.inflightreq.amount=30"
+            
+            # Aplicar middlewares al router
+            - "traefik.http.routers.user-service.middlewares=user-service-cb,user-service-latency,user-service-bulkhead"
+        
         environment:
-            - FLASK_ENV=development
-            - PORT=5004
-            - PERSISTENCE_URL=http://persistence:5003
+            - PERSISTENCE_URL=http://persistence:5000
 
 networks:
     notebookum-network:

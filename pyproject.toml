@@ -1,5 +1,5 @@
 [project]
-name = "service-user-notebookum"
+name = "user-service"
 version = "0.1.0"
 description = "User Microservice for NotebookUm"
 readme = "README.md"

@@ -1,23 +1,82 @@
-"""User service for business logic and persistence proxy"""
+"""User service - handles user operations"""
 
-import re
-import requests
 from typing import Optional, Dict, Any
-from flask import current_app
+import logging
 
-class ValidationError(Exception):
-    """Raised when user data validation fails"""
-    pass
+from app.clients.persistence_client import persistence_client
 
-class UpstreamError(Exception):
-    """Raised when communication with persistence service fails"""
-    def __init__(self, message, status_code=500):
-        super().__init__(message)
-        self.status_code = status_code
+logger = logging.getLogger(__name__)
 
 
 class UserService:
-    """Service layer for user operations"""
+    """Business logic for user management"""
+    
+    @staticmethod
+    async def get_user(user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get user by ID
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            User data or None if not found
+        """
+        try:
+            user = await persistence_client.get_user(user_id)
+            return user
+        except Exception as e:
+            logger.error(f"Error getting user: {str(e)}")
+            return None
+    
+    @staticmethod
+    async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+        """
+        Get user by email
+        
+        Args:
+            email: User email
+            
+        Returns:
+            User data or None if not found
+        """
+        try:
+            user = await persistence_client.get_user_by_email(email)
+            return user
+        except Exception as e:
+            logger.error(f"Error getting user by email: {str(e)}")
+            return None
+    
+    @staticmethod
+    async def update_user(
+        user_id: int,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+        email: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update user information
+        
+        Args:
+            user_id: User ID
+            first_name: New first name
+            last_name: New last name
+            email: New email
+            
+        Returns:
+            Updated user data or None if failed
+        """
+        try:
+            user = await persistence_client.update_user(
+                user_id=user_id,
+                first_name=first_name,
+                last_name=last_name,
+                email=email
+            )
+            return user
+        except Exception as e:
+            logger.error(f"Error updating user: {str(e)}")
+            return None
 
     @staticmethod
     def validate_user_data(data: Optional[Dict[str, Any]]) -> Dict[str, str]:

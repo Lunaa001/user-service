@@ -1,15 +1,90 @@
-from flask import Flask
-from .config import Config
+"""User Service - FastAPI Application"""
 
-def create_app(config_class=Config):
-    app = Flask(__name__)
-    app.config.from_object(config_class)
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
-    from .routes.users import users_bp
-    app.register_blueprint(users_bp)
+from app.config.settings import settings
+from app.controllers import auth_controller, user_controller
 
-    @app.route("/health")
-    def health_check():
-        return {"status": "ok", "service": "user"}, 200
 
-    return app
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events"""
+    # Startup
+    print(f"Starting User Service on {settings.host}:{settings.port}")
+    print(f"Persistence Service URL: {settings.persistence_service_url}")
+    yield
+    # Shutdown
+    print("Shutting down User Service")
+
+
+# Initialize FastAPI application
+app = FastAPI(
+    title="User Service",
+    description="Authentication and User Management Microservice for NotebookUM",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+
+# CORS Configuration
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Include routers
+app.include_router(auth_controller.router, prefix="/api/v1", tags=["auth"])
+app.include_router(user_controller.router, prefix="/api/v1", tags=["users"])
+
+
+# Health check endpoints
+@app.get("/health", tags=["health"])
+async def health():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "service": "user-service",
+        "version": "1.0.0"
+    }
+
+
+@app.get("/ready", tags=["health"])
+async def readiness():
+    """Readiness check endpoint"""
+    return {
+        "status": "ready",
+        "service": "user-service"
+    }
+
+
+@app.get("/", tags=["root"])
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "User Service API",
+        "version": "1.0.0",
+        "endpoints": {
+            "auth": "/api/v1/auth",
+            "users": "/api/v1/users",
+            "docs": "/docs",
+            "redoc": "/redoc"
+        }
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.debug,
+        log_level="info"
+    )

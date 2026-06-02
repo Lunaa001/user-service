@@ -1,35 +1,46 @@
-FROM python:3.12-slim
+# Multi-stage build for User Service
+
+# Stage 1: Builder
+FROM python:3.12-slim as builder
 
 WORKDIR /app
 
-# Crear usuario sin privilegios antes de realizar operaciones
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-# Instalar dependencias de build
+# Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar herramienta de gestión de dependencias
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-
-# Copiar archivos de definición de dependencias
+# Copy project files
 COPY pyproject.toml uv.lock* ./
 
-# Instalar dependencias
-RUN uv sync
+# Install build dependencies
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir .
 
-# Copiar código fuente
+# Stage 2: Runtime
+FROM python:3.12-slim
+
+WORKDIR /app
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Copy venv from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy application code
 COPY . .
 
-# Asegurar permisos correctos para el usuario no-root
-RUN chown -R appuser:appuser /app
-
-# Cambiar al usuario sin privilegios
+# Create non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Puerto estándar interno
-EXPOSE 5000
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8001/health', timeout=5)" || exit 1
 
-# Comando de inicio (puerto estandarizado a 5000)
-CMD ["uv", "run", "granian", "--interface", "wsgi", "main:app", "--host", "0.0.0.0", "--port", "5000", "--workers", "2"]
+EXPOSE 8001
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

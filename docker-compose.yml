@@ -1,38 +1,84 @@
-services: 
-    user-service:
-        image: notebookum-user:latest
-        restart: unless-stopped
-        # LOAD BALANCER PATTERN
-        deploy:
-            replicas: 2
-        networks:
-            - notebookum-network
-        labels:
-            # Traefik habilitación
-            - "traefik.enable=true"
-            
-            # Router configuration
-            - "traefik.http.routers.user-service.rule=Host(`user.universidad.localhost`)"
-            - "traefik.http.routers.user-service.service=user-service"
-            
-            # Service configuration
-            - "traefik.http.services.user-service.loadbalancer.server.port=5000"
-            
-            # CIRCUIT BREAKER PATTERN - Detección de errores de red
-            - "traefik.http.middlewares.user-service-cb.circuitbreaker.expression=NetworkErrorRatio() > 0.5"
-            
-            # LATENCY PATTERN - Control de latencia máxima
-            - "traefik.http.middlewares.user-service-latency.timeout.request=10s"
-            
-            # BULKHEAD PATTERN - Control de concurrencia
-            - "traefik.http.middlewares.user-service-bulkhead.inflightreq.amount=30"
-            
-            # Aplicar middlewares al router
-            - "traefik.http.routers.user-service.middlewares=user-service-cb,user-service-latency,user-service-bulkhead"
-        
-        environment:
-            - PERSISTENCE_URL=http://persistence:5000
+version: '3.8'
+
+services:
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: user-service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - DEBUG=False
+      - JWT_SECRET_KEY=your-super-secret-key-change-in-production
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRE_MINUTES=30
+      - PERSISTENCE_SERVICE_URL=http://persistence-service:8080
+      - REQUEST_TIMEOUT=30
+      - LOG_LEVEL=INFO
+    networks:
+      - notebookum-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      - persistence-service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.user-service.rule=Host(`user.localhost`)"
+      - "traefik.http.services.user-service.loadbalancer.server.port=8001"
+
+  # Persistence Service (Java) - Placeholder for reference
+  persistence-service:
+    image: persistence-service:latest
+    container_name: persistence-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/notebookum
+      - SPRING_DATASOURCE_USERNAME=notebookum
+      - SPRING_DATASOURCE_PASSWORD=notebookum123
+    networks:
+      - notebookum-network
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=notebookum
+      - POSTGRES_USER=notebookum
+      - POSTGRES_PASSWORD=notebookum123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - notebookum-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notebookum"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
 
 networks:
-    notebookum-network:
-        external: true
+  notebookum-network:
+    driver: bridge

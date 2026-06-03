@@ -38,7 +38,7 @@ class PersistenceServiceClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    f"{self.base_url}/api/v1/users",
+                    f"{self.base_url}/api/v1/db/users",
                     json={
                         "email": email,
                         "firstName": first_name,
@@ -47,8 +47,17 @@ class PersistenceServiceClient:
                     }
                 )
                 
-                if response.status_code == 201:
-                    return response.json()
+                if response.status_code in (200, 201):
+                    data = response.json()
+                    return {
+                        "id": data.get("id"),
+                        "email": data.get("email"),
+                        "first_name": data.get("firstName"),
+                        "last_name": data.get("lastName"),
+                        "created_at": data.get("createdAt", ""),
+                        "updated_at": data.get("updatedAt", ""),
+                        "passwordHash": data.get("passwordHash", "")
+                    }
                 else:
                     logger.error(f"Failed to create user: {response.status_code}")
                     return None
@@ -73,11 +82,20 @@ class PersistenceServiceClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
-                    f"{self.base_url}/api/v1/users/{user_id}"
+                    f"{self.base_url}/api/v1/db/users/{user_id}"
                 )
                 
                 if response.status_code == 200:
-                    return response.json()
+                    data = response.json()
+                    return {
+                        "id": data.get("id"),
+                        "email": data.get("email"),
+                        "first_name": data.get("firstName"),
+                        "last_name": data.get("lastName"),
+                        "created_at": data.get("createdAt", ""),
+                        "updated_at": data.get("updatedAt", ""),
+                        "passwordHash": data.get("passwordHash", "")
+                    }
                 else:
                     logger.warning(f"User {user_id} not found")
                     return None
@@ -102,11 +120,20 @@ class PersistenceServiceClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
-                    f"{self.base_url}/api/v1/users/email/{email}"
+                    f"{self.base_url}/api/v1/db/users/email/{email}"
                 )
                 
                 if response.status_code == 200:
-                    return response.json()
+                    data = response.json()
+                    return {
+                        "id": data.get("id"),
+                        "email": data.get("email"),
+                        "first_name": data.get("firstName"),
+                        "last_name": data.get("lastName"),
+                        "created_at": data.get("createdAt", ""),
+                        "updated_at": data.get("updatedAt", ""),
+                        "passwordHash": data.get("passwordHash", "")
+                    }
                 elif response.status_code == 404:
                     logger.info(f"User with email {email} not found")
                     return None
@@ -151,12 +178,21 @@ class PersistenceServiceClient:
             
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.put(
-                    f"{self.base_url}/api/v1/users/{user_id}",
+                    f"{self.base_url}/api/v1/db/users/{user_id}",
                     json=update_data
                 )
                 
                 if response.status_code == 200:
-                    return response.json()
+                    data = response.json()
+                    return {
+                        "id": data.get("id"),
+                        "email": data.get("email"),
+                        "first_name": data.get("firstName"),
+                        "last_name": data.get("lastName"),
+                        "created_at": data.get("createdAt", ""),
+                        "updated_at": data.get("updatedAt", ""),
+                        "passwordHash": data.get("passwordHash", "")
+                    }
                 else:
                     logger.error(f"Failed to update user: {response.status_code}")
                     return None

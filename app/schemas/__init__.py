@@ -29,13 +29,14 @@ class UserSchema(BaseModel):
     """User response schema"""
     id: int = Field(..., description="User ID")
     email: str = Field(..., description="Email")
-    first_name: str = Field(..., description="First name")
-    last_name: str = Field(..., description="Last name")
-    created_at: str = Field(..., description="Creation timestamp")
-    updated_at: str = Field(..., description="Update timestamp")
+    first_name: str = Field(..., alias="firstName", description="First name")
+    last_name: str = Field(..., alias="lastName", description="Last name")
+    created_at: str = Field(..., alias="createdAt", description="Creation timestamp")
+    updated_at: str = Field(default="", description="Update timestamp")
     
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 class TokenSchema(BaseModel):

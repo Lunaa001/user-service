@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     app_name: str = Field(default="User Service", alias="APP_NAME")
     debug: bool = Field(default=False)
     host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8001)
+    port: int = Field(default=5000)
     log_level: str = Field(default="INFO")
     
     # JWT Configuration
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = Field(default=30)
     
     # Persistence Service
-    persistence_service_url: str = Field(default="http://persistence-service:8080")
+    persistence_service_url: str = Field(default="http://persistence-java.universidad.localhost:8080")
     request_timeout: int = Field(default=30)
     
     class Config:

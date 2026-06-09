@@ -1,84 +1,43 @@
-version: '3.8'
-
 services:
-  user-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: user-service
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    environment:
-      - HOST=0.0.0.0
-      - PORT=8001
-      - DEBUG=False
-      - JWT_SECRET_KEY=your-super-secret-key-change-in-production
-      - JWT_ALGORITHM=HS256
-      - JWT_EXPIRE_MINUTES=30
-      - PERSISTENCE_SERVICE_URL=http://persistence-service:8080
-      - REQUEST_TIMEOUT=30
-      - LOG_LEVEL=INFO
-    networks:
-      - notebookum-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-    depends_on:
-      - persistence-service
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.user-service.rule=Host(`user.localhost`)"
-      - "traefik.http.services.user-service.loadbalancer.server.port=8001"
-
-  # Persistence Service (Java) - Placeholder for reference
-  persistence-service:
-    image: persistence-service:latest
-    container_name: persistence-service
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/notebookum
-      - SPRING_DATASOURCE_USERNAME=notebookum
-      - SPRING_DATASOURCE_PASSWORD=notebookum123
-    networks:
-      - notebookum-network
-    depends_on:
-      - postgres
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: postgres
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_DB=notebookum
-      - POSTGRES_USER=notebookum
-      - POSTGRES_PASSWORD=notebookum123
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - notebookum-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U notebookum"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  postgres_data:
+    user:
+        image: notebookum-user:v1.0.0
+        restart: unless-stopped
+        deploy:
+            replicas: 2
+        networks:
+            notebookum-network:
+                aliases:
+                    - users.universidad.localhost
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.user.rule=Host(`users.universidad.localhost`)"
+            - "traefik.http.routers.user.entryPoints=https"
+            - "traefik.http.routers.user.tls=true"
+            - "traefik.http.services.user.loadbalancer.server.port=5000"
+            - "traefik.http.routers.user.middlewares=user-cb,bulkhead-user,cors-user"
+            # CORS via Traefik
+            - "traefik.http.middlewares.cors-user.headers.accesscontrolalloworiginlist=*"
+            - "traefik.http.middlewares.cors-user.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
+            - "traefik.http.middlewares.cors-user.headers.accesscontrolallowheaders=Content-Type,Authorization"
+            - "traefik.http.middlewares.cors-user.headers.addvaryheader=true"
+            # Circuit Breaker
+            - "traefik.http.middlewares.user-cb.circuitbreaker.expression=LatencyAtQuantileMS(50.0) > 2000 || ResponseCodeRatio(500, 600, 0, 600) > 0.30 || NetworkErrorRatio() > 0.10"
+            # Bulkhead
+            - "traefik.http.middlewares.bulkhead-user.inflightreq.amount=10"
+        environment:
+            - HOST=0.0.0.0
+            - PORT=5000
+            - DEBUG=False
+            - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-super-secret-key-change-in-production}
+            - JWT_ALGORITHM=HS256
+            - JWT_EXPIRE_MINUTES=30
+            - PERSISTENCE_SERVICE_URL=http://persistence-java.universidad.localhost:8080
+            - REQUEST_TIMEOUT=30
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
+            - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+            - LOG_LEVEL=INFO
 
 networks:
-  notebookum-network:
-    driver: bridge
+    notebookum-network:
+        external: true

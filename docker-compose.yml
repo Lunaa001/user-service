@@ -8,22 +8,6 @@ services:
             notebookum-network:
                 aliases:
                     - users.universidad.localhost
-        labels:
-            - "traefik.enable=true"
-            - "traefik.http.routers.user.rule=Host(`users.universidad.localhost`)"
-            - "traefik.http.routers.user.entryPoints=https"
-            - "traefik.http.routers.user.tls=true"
-            - "traefik.http.services.user.loadbalancer.server.port=5000"
-            - "traefik.http.routers.user.middlewares=user-cb,bulkhead-user,cors-user"
-            # CORS via Traefik
-            - "traefik.http.middlewares.cors-user.headers.accesscontrolalloworiginlist=*"
-            - "traefik.http.middlewares.cors-user.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
-            - "traefik.http.middlewares.cors-user.headers.accesscontrolallowheaders=Content-Type,Authorization"
-            - "traefik.http.middlewares.cors-user.headers.addvaryheader=true"
-            # Circuit Breaker
-            - "traefik.http.middlewares.user-cb.circuitbreaker.expression=LatencyAtQuantileMS(50.0) > 2000 || ResponseCodeRatio(500, 600, 0, 600) > 0.30 || NetworkErrorRatio() > 0.10"
-            # Bulkhead
-            - "traefik.http.middlewares.bulkhead-user.inflightreq.amount=10"
         environment:
             - HOST=0.0.0.0
             - PORT=5000
@@ -37,6 +21,9 @@ services:
             - REDIS_PORT=6379
             - REDIS_PASSWORD=${REDIS_PASSWORD:-}
             - LOG_LEVEL=INFO
+            # Consul Service Discovery
+            - CONSUL_HOST=consul
+            - CONSUL_PORT=8500
 
 networks:
     notebookum-network:

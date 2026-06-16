@@ -13,8 +13,25 @@ async def lifespan(app: FastAPI):
     # Startup
     print(f"Starting User Service on {settings.host}:{settings.port}")
     print(f"Persistence Service URL: {settings.persistence_service_url}")
+
+    # Register with Consul for Service Discovery
+    from app.consul_registration import register_service, deregister_service
+    register_service(
+        service_name="user-service",
+        service_port=settings.port,
+        health_check_path="/health",
+        tags=[
+            "traefik.enable=true",
+            "traefik.http.routers.user-service.rule=Host(`users.universidad.localhost`)",
+            "traefik.http.routers.user-service.entryPoints=http,https",
+            "traefik.http.services.user-service.loadbalancer.server.port=5000",
+        ],
+    )
+
     yield
-    # Shutdown
+
+    # Shutdown — deregister from Consul
+    deregister_service("user-service", settings.port)
     print("Shutting down User Service")
 
 

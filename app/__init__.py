@@ -15,17 +15,20 @@ async def lifespan(app: FastAPI):
     print(f"Persistence Service URL: {settings.persistence_service_url}")
 
     # Register with Consul for Service Discovery
-    from app.consul_registration import register_service, deregister_service
+    # Tags are read from Consul KV automatically (no hardcoded labels)
+    from app.consul_registration import register_service, deregister_service, fetch_kv_config
+    kv_config = fetch_kv_config("user-service")
+    if kv_config:
+        # Override settings from Consul KV
+        for key, value in kv_config.items():
+            attr = key.lower()
+            if hasattr(settings, attr):
+                setattr(settings, attr, type(getattr(settings, attr))(value))
+
     register_service(
         service_name="user-service",
         service_port=settings.port,
         health_check_path="/health",
-        tags=[
-            "traefik.enable=true",
-            "traefik.http.routers.user-service.rule=Host(`users.universidad.localhost`)",
-            "traefik.http.routers.user-service.entryPoints=http,https",
-            "traefik.http.services.user-service.loadbalancer.server.port=5000",
-        ],
     )
 
     yield

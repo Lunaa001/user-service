@@ -20,8 +20,20 @@ logger = logging.getLogger(__name__)
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-CONSUL_HOST = os.getenv("CONSUL_HOST", "consul")
-CONSUL_PORT = int(os.getenv("CONSUL_PORT", "8500"))
+# Support both CONSUL_URL (e.g. "http://consul:8500") and CONSUL_HOST+CONSUL_PORT
+_consul_url_raw = os.getenv("CONSUL_URL", "")
+if _consul_url_raw:
+    _stripped = _consul_url_raw.replace("http://", "").replace("https://", "")
+    if ":" in _stripped:
+        CONSUL_HOST, _port_str = _stripped.rsplit(":", 1)
+        CONSUL_PORT = int(_port_str)
+    else:
+        CONSUL_HOST = _stripped
+        CONSUL_PORT = 8500
+else:
+    CONSUL_HOST = os.getenv("CONSUL_HOST", "consul")
+    CONSUL_PORT = int(os.getenv("CONSUL_PORT", "8500"))
+
 CONSUL_TOKEN = os.getenv("CONSUL_TOKEN", "2be22662-4819-4a0c-81d9-b3f50c4c389c")
 CONSUL_BASE_URL = f"http://{CONSUL_HOST}:{CONSUL_PORT}"
 

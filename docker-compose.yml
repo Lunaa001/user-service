@@ -1,19 +1,17 @@
 services:
-    user:
-        image: notebookum-user:v1.0.0
-        restart: unless-stopped
-        deploy:
-            replicas: 2
-        networks:
-            notebookum-network:
-                aliases:
-                    - users.universidad.localhost
-        environment:
-            # Toda la configuración viene de Consul KV
-            - CONSUL_HOST=consul
-            - CONSUL_PORT=8500
-            - CONSUL_TOKEN=2be22662-4819-4a0c-81d9-b3f50c4c389c
+  user:
+    build: .
+    image: notebookum-user:v1.0.0
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    networks:
+      notebookum-network:
+        aliases:
+          - users.universidad.localhost
+    environment:
+      - CONSUL_URL=http://consul:8500
 
 networks:
-    notebookum-network:
-        external: true
+  notebookum-network:
+    external: true

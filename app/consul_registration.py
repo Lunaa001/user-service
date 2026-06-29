@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import socket
+import time
 import urllib.request
 import urllib.error
 
@@ -34,7 +35,7 @@ else:
     CONSUL_HOST = os.getenv("CONSUL_HOST", "consul")
     CONSUL_PORT = int(os.getenv("CONSUL_PORT", "8500"))
 
-CONSUL_TOKEN = os.getenv("CONSUL_TOKEN", "2be22662-4819-4a0c-81d9-b3f50c4c389c")
+CONSUL_TOKEN = os.getenv("CONSUL_TOKEN", "")
 CONSUL_BASE_URL = f"http://{CONSUL_HOST}:{CONSUL_PORT}"
 
 
@@ -113,12 +114,21 @@ def fetch_traefik_tags(service_name: str) -> list[str]:
     """
     Build Traefik-compatible tags from Consul KV sub-keys.
 
-    Reads from: config/{service_name}/traefik/*
-    Returns a list like:
-      ["traefik.enable=true",
-       "traefik.http.routers.{name}.rule=Host(`...`)",
-       "traefik.http.routers.{name}.entryPoints=http,https",
-       "traefik.http.services.{name}.loadbalancer.server.port=5000"]
+    Reads from: config/{service_name}/traefik/** — every leaf key under this
+    prefix maps 1:1 to a Traefik tag by replacing "/" with "." and prefixing
+    with "traefik.". E.g.:
+      config/{service_name}/traefik/enable                              = true
+        -> traefik.enable=true
+      config/{service_name}/traefik/http/routers/{name}/rule            = Host(`...`)
+        -> traefik.http.routers.{name}.rule=Host(`...`)
+      config/{service_name}/traefik/http/routers/{name}/middlewares     = rate-limit@file
+        -> traefik.http.routers.{name}.middlewares=rate-limit@file
+      config/{service_name}/traefik/http/services/{name}/loadbalancer/server/port = 5000
+        -> traefik.http.services.{name}.loadbalancer.server.port=5000
+
+    This supports any Traefik tag (routers, services, middlewares, TLS, ...)
+    without needing code changes — the KV tree under config/{service}/traefik/
+    is the single source of truth, seeded by the Consul KV seeder.
     """
     url = f"{CONSUL_BASE_URL}/v1/kv/config/{service_name}/traefik/?recurse"
     headers = {"X-Consul-Token": CONSUL_TOKEN}
@@ -131,32 +141,23 @@ def fetch_traefik_tags(service_name: str) -> list[str]:
         logger.warning("Failed to read Traefik tags from Consul KV for %s: %s", service_name, exc)
         return []
 
-    traefik_kv: dict[str, str] = {}
     prefix = f"config/{service_name}/traefik/"
+    tags: list[str] = []
 
     for entry in entries:
         key: str = entry.get("Key", "")
         raw_value = entry.get("Value")
         if raw_value is None:
-            continue
+            continue  # folder entry, no value
         relative_key = key.removeprefix(prefix)
-        traefik_kv[relative_key] = base64.b64decode(raw_value).decode("utf-8")
+        if not relative_key:
+            continue
+        value = base64.b64decode(raw_value).decode("utf-8")
+        tag_name = "traefik." + relative_key.replace("/", ".")
+        tags.append(f"{tag_name}={value}")
 
-    if not traefik_kv:
-        return []
-
-    # Build standard Traefik tags
-    tags: list[str] = []
-    if "enable" in traefik_kv:
-        tags.append(f"traefik.enable={traefik_kv['enable']}")
-    if "router_rule" in traefik_kv:
-        tags.append(f"traefik.http.routers.{service_name}.rule={traefik_kv['router_rule']}")
-    if "entrypoints" in traefik_kv:
-        tags.append(f"traefik.http.routers.{service_name}.entryPoints={traefik_kv['entrypoints']}")
-    if "lb_port" in traefik_kv:
-        tags.append(f"traefik.http.services.{service_name}.loadbalancer.server.port={traefik_kv['lb_port']}")
-
-    logger.info("✓ Loaded %d Traefik tags from Consul KV for %s", len(tags), service_name)
+    if tags:
+        logger.info("✓ Loaded %d Traefik tags from Consul KV for %s", len(tags), service_name)
     return tags
 
 
@@ -172,6 +173,9 @@ def register_service(
     Register this service instance with Consul.
 
     If tags are not provided, they are fetched automatically from Consul KV.
+    Retries with a fixed backoff because the Consul stack and this service's
+    stack are deployed as independent `docker compose` projects — there is no
+    cross-project `depends_on`, so Consul may not be ready yet on first try.
     """
     # If no tags passed, read from Consul KV
     if tags is None:
@@ -194,18 +198,26 @@ def register_service(
         },
     }
 
-    success = _consul_request("PUT", "/v1/agent/service/register", payload)
-    if success:
-        logger.info(
-            "✓ Registered in Consul: %s (id=%s, addr=%s:%d, tags=%d)",
-            service_name, service_id, container_ip, service_port, len(tags),
-        )
-    else:
-        logger.error(
-            "✗ Failed to register in Consul: %s (addr=%s:%d)",
-            service_name, container_ip, service_port,
-        )
-    return success
+    retries, delay_seconds = 5, 2
+    for attempt in range(1, retries + 1):
+        if _consul_request("PUT", "/v1/agent/service/register", payload):
+            logger.info(
+                "✓ Registered in Consul: %s (id=%s, addr=%s:%d, tags=%d)",
+                service_name, service_id, container_ip, service_port, len(tags),
+            )
+            return True
+        if attempt < retries:
+            logger.warning(
+                "Consul registration attempt %d/%d failed for %s, retrying in %ds",
+                attempt, retries, service_name, delay_seconds,
+            )
+            time.sleep(delay_seconds)
+
+    logger.error(
+        "✗ Failed to register in Consul: %s (addr=%s:%d) after %d attempts",
+        service_name, container_ip, service_port, retries,
+    )
+    return False
 
 
 def deregister_service(service_name: str, service_port: int) -> bool:
